@@ -56,7 +56,7 @@ case class SmartIssueTransaction private (version: Byte,
       "reissuable"  -> reissuable,
       "decimals"    -> decimals,
       "description" -> new String(description, StandardCharsets.UTF_8),
-      "script"      -> script.map(_.text)
+      "script"      -> script.map(_.bytes().base58)
     ))
 
   override val bytes: Coeval[Array[Byte]] = Coeval.evalOnce(Bytes.concat(Array(0: Byte), bodyBytes(), proofs.bytes()))
