@@ -83,9 +83,9 @@ class MatcherActor(orderHistory: ActorRef,
     }
   }
 
-  def createAndForward(pair: AssetPair, order: Any): Unit = {
-    val orderBook = createOrderBook(pair)
-    persistAsync(OrderBookCreated(pair)) { _ =>
+  def createAndForward(order: Order): Unit = {
+    val orderBook = createOrderBook(order.assetPair)
+    persistAsync(OrderBookCreated(order.assetPair)) { _ =>
       forwardReq(order)(orderBook)
     }
   }
@@ -119,7 +119,7 @@ class MatcherActor(orderHistory: ActorRef,
     case order: Order =>
       checkAssetPair(order.assetPair, order) {
         checkBlacklistedAddress(order.assetPair, order.senderPublicKey) {
-          orderBook(order.assetPair).fold(createAndForward(order.assetPair, order))(forwardReq(order))
+          orderBook(order.assetPair).fold(createAndForward(order))(forwardReq(order))
         }
       }
 
