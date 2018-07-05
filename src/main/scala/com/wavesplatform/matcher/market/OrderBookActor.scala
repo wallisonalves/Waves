@@ -19,7 +19,7 @@ import io.netty.channel.group.ChannelGroup
 import kamon.Kamon
 import play.api.libs.json._
 import scorex.account.Address
-import scorex.transaction.ValidationError
+import scorex.transaction.{AssetId, ValidationError}
 import scorex.transaction.ValidationError.{AccountBalanceError, GenericError, OrderValidationError}
 import scorex.transaction.assets.exchange._
 import scorex.utils.{NTP, ScorexLogging}
@@ -365,7 +365,7 @@ object OrderBookActor {
 
   case class ForceCancelOrder(assetPair: AssetPair, orderId: ByteStr) extends OrderBookRequest
 
-  case class BlacklistAddresses(addresses: Set[Address])
+  case class BlacklistAddresses(assetId: AssetId, addresses: Set[Address])
 
   case object OrderCleanup
 
