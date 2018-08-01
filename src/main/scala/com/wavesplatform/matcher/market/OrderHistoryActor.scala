@@ -7,7 +7,6 @@ import com.wavesplatform.matcher.api.{BadMatcherResponse, MatcherResponse}
 import com.wavesplatform.matcher.market.OrderBookActor.CancelOrder
 import com.wavesplatform.matcher.market.OrderHistoryActor.{ExpirableOrderHistoryRequest, _}
 import com.wavesplatform.matcher.model.Events.{OrderAdded, OrderCanceled, OrderExecuted}
-import com.wavesplatform.matcher.model.LimitOrder.Filled
 import com.wavesplatform.matcher.model._
 import com.wavesplatform.metrics.TimerExt
 import com.wavesplatform.state.ByteStr
@@ -42,9 +41,9 @@ class OrderHistoryActor(db: DB, val settings: MatcherSettings, val utxPool: UtxP
 
   def processExpirableRequest(r: Any): Unit = r match {
     case ValidateOrder(o, _) =>
-      sender() ! ValidateOrderResult(validateNewOrder(o))
+      sender() ! ValidateOrderResult(o.id(), validateNewOrder(o))
     case ValidateCancelOrder(co, _) =>
-      sender() ! ValidateCancelResult(validateCancelOrder(co))
+      sender() ! ValidateCancelResult(co.orderId, validateCancelOrder(co))
     case req: DeleteOrderFromHistory =>
       deleteFromOrderHistory(req)
     case GetTradableBalance(assetPair, addr, _) =>
@@ -71,7 +70,7 @@ class OrderHistoryActor(db: DB, val settings: MatcherSettings, val utxPool: UtxP
   def forceCancelOrder(id: ByteStr): Unit = {
     orderHistory.order(id).map((_, orderHistory.orderInfo(id))) match {
       case Some((o, oi)) =>
-        orderHistory.orderCanceled(OrderCanceled(LimitOrder.limitOrder(o.price, oi.remaining, o)))
+        orderHistory.orderCanceled(OrderCanceled(LimitOrder.limitOrder(o.price, oi.remaining, oi.remainingFee, o), unmatchable = false))
         sender() ! o
       case None =>
         sender() ! None
@@ -98,7 +97,7 @@ class OrderHistoryActor(db: DB, val settings: MatcherSettings, val utxPool: UtxP
 
   def deleteFromOrderHistory(req: DeleteOrderFromHistory): Unit = {
     orderHistory.orderInfo(req.id).status match {
-      case Filled | LimitOrder.Cancelled(_) =>
+      case LimitOrder.Filled(_) | LimitOrder.Cancelled(_) =>
         orderHistory.deleteOrder(req.address, req.id)
         sender() ! OrderDeleted(req.id)
       case _ =>
@@ -138,11 +137,11 @@ object OrderHistoryActor {
 
   case class ValidateOrder(order: Order, ts: Long) extends ExpirableOrderHistoryRequest
 
-  case class ValidateOrderResult(result: Either[GenericError, Order])
+  case class ValidateOrderResult(validatedOrderId: ByteStr, result: Either[GenericError, Order])
 
   case class ValidateCancelOrder(cancel: CancelOrder, ts: Long) extends ExpirableOrderHistoryRequest
 
-  case class ValidateCancelResult(result: Either[GenericError, CancelOrder])
+  case class ValidateCancelResult(validatedOrderId: ByteStr, result: Either[GenericError, CancelOrder])
 
   case class RecoverFromOrderBook(ob: OrderBook) extends OrderHistoryRequest
 

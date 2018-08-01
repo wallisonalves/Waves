@@ -4,7 +4,7 @@ import cats.implicits._
 import cats.kernel.Monoid
 import com.wavesplatform.database.{DBExt, RW}
 import com.wavesplatform.matcher.api.DBUtils
-import com.wavesplatform.matcher.model.Events.{Event, OrderAdded, OrderCanceled, OrderExecuted}
+import com.wavesplatform.matcher.model.Events._
 import com.wavesplatform.matcher.model.LimitOrder.{Filled, OrderStatus}
 import com.wavesplatform.matcher.{MatcherKeys, MatcherSettings, OrderAssets}
 import com.wavesplatform.metrics.TimerExt
@@ -26,7 +26,7 @@ class OrderHistory(db: DB, settings: MatcherSettings) {
   private def saveOrderInfo(rw: RW, event: Event): Map[ByteStr, (Order, OrderInfo)] =
     saveOrderInfoTimer.measure(db.readWrite { rw =>
       val updatedInfo = Events.createOrderInfo(event).map {
-        case (orderId, (o, oi)) => (orderId, (o, DBUtils.orderInfo(rw, orderId).combine(oi)))
+        case (orderId, (o, oi)) => (orderId, (o, OrderInfo.combine(DBUtils.orderInfo(rw, orderId), oi)))
       }
 
       for ((orderId, (_, oi)) <- updatedInfo) {
@@ -81,7 +81,7 @@ class OrderHistory(db: DB, settings: MatcherSettings) {
       rw.put(k, nextSeqNr)
 
       val spendAssetId = if (o.orderType == OrderType.BUY) o.assetPair.priceAsset else o.assetPair.amountAsset
-      rw.put(MatcherKeys.addressOrders(o.senderPublicKey, nextSeqNr), OrderAssets(orderId, spendAssetId))
+      rw.put(MatcherKeys.addressOrders(o.senderPublicKey, nextSeqNr), Some(OrderAssets(orderId, spendAssetId)))
     }
   }
 
@@ -103,7 +103,7 @@ class OrderHistory(db: DB, settings: MatcherSettings) {
 
   def deleteOrder(address: Address, orderId: ByteStr): Boolean = db.readWrite { rw =>
     DBUtils.orderInfo(rw, orderId).status match {
-      case Filled | LimitOrder.Cancelled(_) =>
+      case Filled(_) | LimitOrder.Cancelled(_) =>
         rw.delete(MatcherKeys.order(orderId))
         rw.delete(MatcherKeys.orderInfo(orderId))
         true

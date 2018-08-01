@@ -226,7 +226,7 @@ case class MatcherApiRoute(wallet: Wallet,
       checkGetSignature(publicKey, ts, sig) match {
         case Success(address) =>
           withAssetPair(p, redirectToInverse = true, s"/publicKey/$publicKey") { pair =>
-            complete(StatusCodes.OK -> DBUtils.ordersByAddress(db, address, Set(pair.priceAsset, pair.amountAsset), false).map {
+            complete(StatusCodes.OK -> DBUtils.ordersByAddressAndPair(db, address, pair, false).map {
               case (order, orderInfo) =>
                 orderJson(order, orderInfo)
             })
@@ -261,11 +261,14 @@ case class MatcherApiRoute(wallet: Wallet,
     parameters('activeOnly.as[Boolean].?) { activeOnly =>
       (headerValueByName("Timestamp") & headerValueByName("Signature")) { (ts, sig) =>
         checkGetSignature(publicKey, ts, sig) match {
-          case Success(address) =>
-            complete(StatusCodes.OK -> DBUtils.ordersByAddress(db, address, Set.empty, activeOnly.getOrElse(false)).map {
-              case (order, orderInfo) =>
-                orderJson(order, orderInfo)
-            })
+          case Success(_) =>
+            complete(
+              StatusCodes.OK -> DBUtils
+                .ordersByAddress(db, publicKey, Set.empty, activeOnly.getOrElse(false), matcherSettings.maxOrdersPerRequest)
+                .map {
+                  case (order, orderInfo) =>
+                    orderJson(order, orderInfo)
+                })
           case Failure(ex) =>
             complete(StatusCodes.BadRequest -> Json.obj("message" -> ex.getMessage))
         }
@@ -307,7 +310,7 @@ case class MatcherApiRoute(wallet: Wallet,
       new ApiImplicitParam(name = "address", value = "Address", dataType = "string", paramType = "path")
     ))
   def getAllOrderHistory: Route = (path("orders" / AddressPM) & get & withAuth) { address =>
-    complete(StatusCodes.OK -> DBUtils.ordersByAddress(db, address, Set.empty, true).map {
+    complete(StatusCodes.OK -> DBUtils.ordersByAddress(db, address, Set.empty, true, matcherSettings.maxOrdersPerRequest).map {
       case (order, orderInfo) =>
         orderJson(order, orderInfo)
     })
@@ -346,7 +349,10 @@ case class MatcherApiRoute(wallet: Wallet,
     (headerValueByName("Timestamp") & headerValueByName("Signature")) { (ts, sig) =>
       checkGetSignature(publicKey, ts, sig) match {
         case Success(pk) =>
-          complete(StatusCodes.OK -> Json.toJson(DBUtils.reservedBalance(db, pk).map { case (k, v) => AssetPair.assetIdStr(k) -> v }))
+          complete(StatusCodes.OK -> Json.toJson(DBUtils.reservedBalance(db, pk).map {
+            case (k, v) =>
+              AssetPair.assetIdStr(k) -> v
+          }))
         case Failure(ex) =>
           complete(StatusCodes.BadRequest -> Json.obj("message" -> ex.getMessage))
       }
