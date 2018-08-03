@@ -21,7 +21,7 @@ import kamon.Kamon
 import play.api.libs.json._
 import scorex.account.Address
 import scorex.transaction.{AssetId, ValidationError}
-import scorex.transaction.ValidationError.{AccountBalanceError, GenericError, OrderValidationError}
+import scorex.transaction.ValidationError.{AccountBalanceError, GenericError, NegativeAmount, OrderValidationError}
 import scorex.transaction.assets.exchange._
 import scorex.utils.{NTP, ScorexLogging}
 import scorex.wallet.Wallet
@@ -364,7 +364,11 @@ class OrderBookActor(assetPair: AssetPair,
         } else {
           Some(event.submitted)
         }
-      case _ => cancelCounterOrder()
+      case _: NegativeAmount =>
+        processEvent(Events.OrderCanceled(event.submitted, unmatchable = true))
+        None
+      case _ =>
+        cancelCounterOrder()
     }
   }
 
