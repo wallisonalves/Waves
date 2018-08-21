@@ -2,7 +2,7 @@ package com.wavesplatform.matcher.market
 
 import java.util.concurrent.atomic.AtomicReference
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorRef, Props, Terminated}
 import akka.http.scaladsl.model.{StatusCode, StatusCodes}
 import akka.persistence.{PersistentActor, RecoveryCompleted, _}
 import com.google.common.base.Charsets
@@ -22,8 +22,6 @@ import scorex.transaction.assets.exchange.Validation.booleanOperators
 import scorex.transaction.assets.exchange.{AssetPair, Order}
 import scorex.utils._
 import scorex.wallet.Wallet
-
-import scala.collection.immutable
 
 class MatcherActor(orderHistory: ActorRef,
                    pairBuilder: AssetPairBuilder,
@@ -177,7 +175,12 @@ class MatcherActor(orderHistory: ActorRef,
         )
       }
 
-      context.actorOf(Props(classOf[GracefulShutdownActor], context.children.toVector, self))
+      if (context.children.isEmpty) {
+        shutdownStatus = shutdownStatus.copy(orderBooksStopped = true)
+        shutdownStatus.tryComplete()
+      } else {
+        context.actorOf(Props(classOf[GracefulShutdownActor], context.children.toVector, self))
+      }
   }
 
   def initPredefinedPairs(): Unit = {
@@ -188,18 +191,21 @@ class MatcherActor(orderHistory: ActorRef,
     if (tradedPairs.contains(pair)) {
       tradedPairs -= pair
       deleteMessages(lastSequenceNr)
-      persistAll(tradedPairs.map(v => OrderBookCreated(v._1)).to[immutable.Seq])(_ => ())
+      saveSnapshot(Snapshot(tradedPairs.keySet))
     }
   }
 
   override def receiveRecover: Receive = {
     case OrderBookCreated(pair) =>
-      if (orderBook(pair).isEmpty) createOrderBook(pair)
+      if (orderBook(pair).isEmpty) {
+        log.info(s"Order book created for $pair")
+        createOrderBook(pair)
+      }
 
     case SnapshotOffer(metadata, snapshot: Snapshot) =>
       lastSnapshotSequenceNr = metadata.sequenceNr
       log.info(s"Loaded the snapshot with nr = ${metadata.sequenceNr}")
-      snapshot.tradedPairsSet.par.foreach(createOrderBook)
+      snapshot.tradedPairsSet.foreach(createOrderBook)
 
     case RecoveryCompleted =>
       log.info("Recovery completed!")
@@ -360,12 +366,12 @@ object MatcherActor {
   }
 
   class GracefulShutdownActor(children: Vector[ActorRef], receiver: ActorRef) extends Actor {
-    children.foreach(_ ! Shutdown)
+    children.map(context.watch).foreach(_ ! Shutdown)
 
     override def receive: Receive = state(children.size)
 
     private def state(expectedResponses: Int): Receive = {
-      case ShutdownComplete =>
+      case _: Terminated =>
         if (expectedResponses > 1) context.become(state(expectedResponses - 1))
         else {
           receiver ! ShutdownComplete
