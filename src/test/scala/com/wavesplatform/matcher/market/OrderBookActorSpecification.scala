@@ -477,7 +477,7 @@ class OrderBookActorSpecification
 
         val unexpectedOrder = buy(pair, 1, 2)
         actor.tell(ValidateOrderResult(unexpectedOrder.id(), Right(unexpectedOrder)), historyActor.ref)
-        expectNoMsg()
+        expectNoMessage()
       }
 
       "receives ValidateCancelResult of another order" in {
@@ -489,7 +489,7 @@ class OrderBookActorSpecification
 
         val unexpectedOrder = buy(pair, 1, 2)
         actor.tell(CancelOrder(unexpectedOrder.id()), historyActor.ref)
-        expectNoMsg()
+        expectNoMessage()
       }
     }
   }
